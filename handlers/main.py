@@ -2,6 +2,7 @@ from aiogram import Router, F, types
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from core.database import get_async_session
 from models.user import User
@@ -14,8 +15,13 @@ router = Router()
 async def cmd_start(message: types.Message, state: FSMContext):
     """Обработчик команды /start"""
     async with get_async_session() as db:
-        # Создаем или получаем пользователя
-        user = await db.get(User, message.from_user.id)
+        # Ищем пользователя по telegram_id
+        result = await db.execute(
+            select(User).where(User.telegram_id == message.from_user.id)
+        )
+        user = result.scalar_one_or_none()
+        
+        # Если пользователя нет - создаем
         if not user:
             user = User(
                 telegram_id=message.from_user.id,
@@ -56,14 +62,19 @@ async def show_main_menu(message: types.Message):
 async def show_statistics(message: types.Message):
     """Показать статистику пользователя"""
     async with get_async_session() as db:
-        user = await db.get(User, message.from_user.id)
+        # Ищем пользователя по telegram_id
+        result = await db.execute(
+            select(User).where(User.telegram_id == message.from_user.id)
+        )
+        user = result.scalar_one_or_none()
+        
         if not user:
             await message.answer("❌ Сначала начните с команды /start")
             return
         
         # Получаем статистику по привычкам
         from models.habit import Habit, HabitRecord
-        from sqlalchemy import func, select
+        from sqlalchemy import func
         
         habits_query = select(func.count(Habit.id)).where(Habit.user_id == user.id, Habit.is_active == True)
         total_habits = await db.scalar(habits_query)

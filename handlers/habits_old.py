@@ -16,18 +16,16 @@ class HabitStates(StatesGroup):
     adding_name = State()
     deleting = State()
 
-async def get_user_by_telegram_id(db: AsyncSession, telegram_id: int):
-    """Вспомогательная функция для поиска пользователя по telegram_id"""
-    result = await db.execute(
-        select(User).where(User.telegram_id == telegram_id)
-    )
-    return result.scalar_one_or_none()
-
 @router.message(F.text == "📊 Трекер привычек")
 async def show_habits_menu(message: types.Message):
     """Показать меню трекера привычек"""
     async with get_async_session() as db:
-        user = await get_user_by_telegram_id(db, message.from_user.id)
+        # Ищем пользователя по telegram_id
+        result = await db.execute(
+            select(User).where(User.telegram_id == message.from_user.id)
+        )
+        user = result.scalar_one_or_none()
+        
         if not user:
             await message.answer("❌ Сначала начните с команды /start")
             return
@@ -88,7 +86,7 @@ async def process_habit_name(message: types.Message, state: FSMContext):
         return
     
     async with get_async_session() as db:
-        user = await get_user_by_telegram_id(db, message.from_user.id)
+        user = await db.get(User, message.from_user.id)
         
         # Проверяем, нет ли уже такой привычки
         existing_query = select(Habit).where(
@@ -208,7 +206,7 @@ async def confirm_habit_completion(callback: types.CallbackQuery):
 async def start_deleting_habit(callback: types.CallbackQuery, state: FSMContext):
     """Начать удаление привычки"""
     async with get_async_session() as db:
-        user = await get_user_by_telegram_id(db, callback.from_user.id)
+        user = await db.get(User, callback.from_user.id)
         
         query = select(
             Habit.id, 
