@@ -454,14 +454,14 @@ async def delete_habit_execute(callback: types.CallbackQuery, state: FSMContext)
         
         habit_name = habit.name
         
-        # Мягкое удаление (деактивация)
-        habit.is_active = False
+        # Жесткое удаление из БД
+        await db.delete(habit)
         await db.commit()
         
         await callback.message.answer(
-            f"🗑️ <b>Привычка удалена</b>\n\n"
+            f"🗑️ <b>Привычка удалена навсегда</b>\n\n"
             f"🏷️ {habit_name}\n\n"
-            f"💡 Все данные сохранены, привычка просто деактивирована",
+            f"💡 Ты всегда можешь создать новую привычку с тем же названием",
             reply_markup=get_main_menu()
         )
 
