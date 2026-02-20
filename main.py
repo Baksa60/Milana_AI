@@ -21,6 +21,7 @@ from core.database import get_async_session, init_db
 from models.user import User
 from models.habit import Habit, HabitRecord
 from utils.keyboards import get_main_menu, get_habits_menu, get_habit_confirmation, get_cancel_keyboard
+from version import get_version, get_full_version
 
 # Создаем роутер
 router = Router()
@@ -71,11 +72,22 @@ async def start_cmd(message: types.Message, state: FSMContext):
 async def help_cmd(message: types.Message):
     await message.answer(
         "📚 <b>Справка по командам:</b>\n\n"
+        f"🤖 <b>Версия:</b> Milana AI v{get_version()}\n"
+        f"📊 <b>Трекер привычек:</b> v{get_version('habits')}\n\n"
         "/start - Начать работу с ботом\n"
-        "/help - Эта справка\n\n"
+        "/help - Эта справка\n"
+        "/version - Информация о версии\n\n"
         "💡 <b>Советы:</b>\n"
         "• Используй кнопки меню для навигации\n"
         "• AI-запросы ограничены: 5 в день бесплатно",
+        reply_markup=get_main_menu()
+    )
+
+@router.message(F.text == "/version")
+async def version_cmd(message: types.Message):
+    await message.answer(
+        f"📋 <b>Информация о версии:</b>\n\n"
+        f"{get_full_version()}",
         reply_markup=get_main_menu()
     )
 
@@ -194,7 +206,7 @@ async def echo(message: types.Message):
     )
 
 async def main():
-    print("🤖 Milana_AI запускается...")
+    print(f"🤖 Milana AI v{get_version()} запускается...")
     
     # Автоматическая инициализация базы данных
     print("🔧 Проверка базы данных...")
@@ -209,7 +221,7 @@ async def main():
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
     
-    print("🚀 Бот запущен и готов к работе!")
+    print(f"🚀 Milana AI v{get_version()} запущен и готов к работе!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
