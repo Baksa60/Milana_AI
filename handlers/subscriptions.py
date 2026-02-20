@@ -1,6 +1,6 @@
 from aiogram import Router, F, types
 
-router = Router()
+router = Router(name="subscriptions")
 
 @router.message(F.text == "💳 Подписки")
 async def show_subscriptions_menu(message: types.Message):

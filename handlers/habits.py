@@ -10,7 +10,7 @@ from models.user import User
 from models.habit import Habit, HabitRecord
 from utils.keyboards import get_habits_menu, get_habit_confirmation, get_cancel_keyboard, get_main_menu
 
-router = Router()
+router = Router(name="habits")
 
 class HabitStates(StatesGroup):
     adding_name = State()

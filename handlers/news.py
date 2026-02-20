@@ -1,6 +1,6 @@
 from aiogram import Router, F, types
 
-router = Router()
+router = Router(name="news")
 
 @router.message(F.text == "📰 Новости")
 async def show_news_menu(message: types.Message):

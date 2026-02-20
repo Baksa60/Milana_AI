@@ -1,6 +1,6 @@
 from aiogram import Router, F, types
 
-router = Router()
+router = Router(name="settings")
 
 @router.message(F.text == "⚙️ Настройки")
 async def show_settings_menu(message: types.Message):

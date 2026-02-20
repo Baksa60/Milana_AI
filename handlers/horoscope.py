@@ -1,6 +1,6 @@
 from aiogram import Router, F, types
 
-router = Router()
+router = Router(name="horoscope")
 
 @router.message(F.text == "🔮 Гороскоп")
 async def show_horoscope_menu(message: types.Message):
