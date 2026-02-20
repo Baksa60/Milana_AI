@@ -23,9 +23,16 @@ async def get_user_by_telegram_id(db: AsyncSession, telegram_id: int):
     )
     return result.scalar_one_or_none()
 
-@router.message(F.text == "📊 Трекер привычек")
+# Копируем точный текст из keyboards.py
+HABITS_BUTTON_TEXT = "📊 Трекер привычек"
+
+@router.message(F.text == HABITS_BUTTON_TEXT)
 async def show_habits_menu(message: types.Message):
     """Показать меню трекера привычек"""
+    print(f"🔍 DEBUG: Получено сообщение: '{message.text}'")
+    print(f"🔍 DEBUG: Ожидаем: '{HABITS_BUTTON_TEXT}'")
+    print(f"🔍 DEBUG: Совпадает: {message.text == HABITS_BUTTON_TEXT}")
+    
     async with get_async_session() as db:
         user = await get_user_by_telegram_id(db, message.from_user.id)
         if not user:

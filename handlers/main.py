@@ -52,8 +52,9 @@ async def cmd_start(message: types.Message, state: FSMContext):
 @router.message(Command("menu"))
 async def show_main_menu(message: types.Message):
     """Показать главное меню"""
+    print(f"🔍 DEBUG: Главное меню - получено сообщение: '{message.text}'")
     await message.answer(
-        "🏠 Главное меню:\n\n"
+        "🏠 <b>Главное меню:</b>\n\n"
         "Выбери нужный раздел:",
         reply_markup=get_main_menu()
     )

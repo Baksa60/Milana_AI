@@ -5,6 +5,7 @@ router = Router(name="horoscope")
 @router.message(F.text == "🔮 Гороскоп")
 async def show_horoscope_menu(message: types.Message):
     """Заглушка для гороскопа"""
+    print(f"🔍 DEBUG: Гороскоп - получено сообщение: '{message.text}'")
     await message.answer(
         "🔮 <b>Гороскоп</b>\n\n"
         "Этот модуль в разработке...\n\n"

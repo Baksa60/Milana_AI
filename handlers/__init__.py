@@ -2,10 +2,10 @@
 FEATURES = {
     "main": True,           # Всегда включен
     "habits": True,          # Полностью работает
-    "horoscope": False,       # В разработке
-    "subscriptions": False,    # В разработке  
-    "news": False,           # В разработке
-    "settings": False         # В разработке
+    "horoscope": True,       # Включим для теста
+    "subscriptions": True,    # Включим для теста
+    "news": True,           # Включим для теста
+    "settings": True         # Включим для теста
 }
 
 from .main import router as main_router

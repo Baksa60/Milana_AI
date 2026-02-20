@@ -5,6 +5,7 @@ router = Router(name="subscriptions")
 @router.message(F.text == "💳 Подписки")
 async def show_subscriptions_menu(message: types.Message):
     """Заглушка для подписок"""
+    print(f"🔍 DEBUG: Подписки - получено сообщение: '{message.text}'")
     await message.answer(
         "💳 <b>Менеджер подписок</b>\n\n"
         "Этот модуль в разработке...\n\n"
