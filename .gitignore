@@ -64,3 +64,4 @@ logs/
 *.tmp
 *.bak
 *.old
+".windsurf/" 
