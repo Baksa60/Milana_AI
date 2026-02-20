@@ -221,8 +221,13 @@ async def main():
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
     
-    print(f"🚀 Milana AI v{get_version()} запущен и готов к работе!")
-    await dp.start_polling(bot)
+    try:
+        print(f"🚀 Milana AI v{get_version()} запущен и готов к работе!")
+        await dp.start_polling(bot)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("\n🛑 Бот останавливается...")
+        await bot.session.close()
+        print("✅ Бот корректно остановлен")
 
 if __name__ == "__main__":
     asyncio.run(main())
