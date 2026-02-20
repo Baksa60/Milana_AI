@@ -40,6 +40,7 @@ data/
 # IDE
 .vscode/
 .idea/
+.windsurf/
 *.swp
 *.swo
 *~
@@ -64,4 +65,4 @@ logs/
 *.tmp
 *.bak
 *.old
-".windsurf/" 
+
