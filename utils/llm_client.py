@@ -3,7 +3,6 @@ import asyncio
 from typing import Optional, Dict, Any
 from datetime import datetime, date
 from sqlalchemy.ext.asyncio import AsyncSession
-from core.database import get_async_session
 from config import get_settings
 import json
 
