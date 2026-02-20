@@ -13,14 +13,17 @@ from aiogram.client.bot import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardButton
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from datetime import date, datetime
 
 from core.database import get_async_session, init_db
 from models.user import User
-from models.habit import Habit, HabitRecord
-from utils.keyboards import get_main_menu, get_habits_menu, get_habit_confirmation, get_cancel_keyboard
+from models.habit import Habit
+from models.habit_log_new import HabitLog
+from utils.keyboards import get_main_menu, get_habits_menu, get_habit_confirmation, get_habit_creation_confirmation, get_cancel_keyboard
 from version import get_version, get_full_version
 
 # Создаем роутер
@@ -28,6 +31,12 @@ router = Router()
 
 class HabitStates(StatesGroup):
     adding_name = State()
+    adding_description = State()
+    adding_frequency = State()
+    adding_goal = State()
+    adding_reminder_time = State()
+    adding_color = State()
+    confirming = State()
 
 async def get_user_by_telegram_id(db: AsyncSession, telegram_id: int):
     result = await db.execute(
@@ -103,7 +112,8 @@ async def habits_cmd(message: types.Message):
         query = select(
             Habit.id, 
             Habit.name, 
-            Habit.current_streak
+            Habit.streak_current,
+            Habit.last_completed_date
         ).where(
             and_(Habit.user_id == user.id, Habit.is_active == True)
         ).order_by(Habit.created_at)
@@ -120,13 +130,407 @@ async def habits_cmd(message: types.Message):
         else:
             text = f"📊 Твои привычки ({len(habits)}):\n\n"
             habits_list = []
-            for habit_id, habit_name, streak in habits:
-                habits_list.append((habit_id, habit_name, streak))
-                streak_emoji = "🔥" if streak >= 7 else "💪" if streak >= 3 else "👍"
-                text += f"{streak_emoji} {habit_name} - {streak} дней подряд\n"
+            for habit_id, habit_name, streak_current, last_completed_date in habits:
+                habits_list.append((habit_id, habit_name, streak_current))
+                
+                # Проверяем выполнена ли привычка сегодня
+                from datetime import date
+                is_completed_today = last_completed_date == date.today()
+                
+                # Используем метод из модели для эмодзи стрика
+                streak_emoji = "🔥" if streak_current >= 7 else "💪" if streak_current >= 3 else "👍"
+                completed_mark = "✅" if is_completed_today else "⭕"
+                text += f"{completed_mark} {streak_emoji} {habit_name} - {streak_current} дней подряд\n"
             
             text += f"\n💡 Продолжай в том же духе!"
             await message.answer(text, reply_markup=get_habits_menu(habits_list))
+
+# Обработчики для добавления привычки
+@router.message(F.text == "➕ Добавить привычку")
+@router.callback_query(F.data == "habit_add")
+async def add_habit_start(message_or_callback, state: FSMContext):
+    """Начало процесса добавления привычки"""
+    await state.set_state(HabitStates.adding_name)
+    
+    # Определяем тип объекта (message или callback)
+    if hasattr(message_or_callback, 'message'):
+        # Это callback query
+        await message_or_callback.answer()
+        await message_or_callback.message.answer(
+            "📝 <b>Создание новой привычки</b>\n\n"
+            "Шаг 1/5: Введи название привычки\n\n"
+            "<i>Пример: 'Утренняя пробежка', 'Читать 30 минут', 'Медитация'</i>\n\n"
+            "❌ Для отмены: /cancel",
+            reply_markup=get_cancel_keyboard()
+        )
+    else:
+        # Это message
+        await message_or_callback.answer(
+            "📝 <b>Создание новой привычки</b>\n\n"
+            "Шаг 1/5: Введи название привычки\n\n"
+            "<i>Пример: 'Утренняя пробежка', 'Читать 30 минут', 'Медитация'</i>\n\n"
+            "❌ Для отмены: /cancel",
+            reply_markup=get_cancel_keyboard()
+        )
+
+@router.message(HabitStates.adding_name)
+async def add_habit_name(message: types.Message, state: FSMContext):
+    """Обработка названия привычки"""
+    name = message.text.strip()
+    
+    # Валидация
+    if len(name) < 1:
+        await message.answer("❌ Название не может быть пустым. Попробуй еще раз:")
+        return
+    
+    if len(name) > 50:
+        await message.answer("❌ Слишком длинное название (максимум 50 символов). Попробуй еще раз:")
+        return
+    
+    # Сохраняем название и переходим к описанию
+    await state.update_data(name=name)
+    await state.set_state(HabitStates.adding_description)
+    
+    await message.answer(
+        f"✅ Название: <b>{name}</b>\n\n"
+        "Шаг 2/5: Введи описание (необязательно)\n\n"
+        "<i>Зачем тебе эта привычка? Какую цель преследуешь?</i>\n\n"
+        "❌ Для отмены: /cancel\n"
+        "⏭️ Пропустить: /skip"
+    )
+
+@router.message(HabitStates.adding_description)
+async def add_habit_description(message: types.Message, state: FSMContext):
+    """Обработка описания привычки"""
+    description = message.text.strip()
+    
+    # Валидация
+    if len(description) > 500:
+        await message.answer("❌ Слишком длинное описание (максимум 500 символов). Попробуй еще раз:")
+        return
+    
+    # Сохраняем описание и переходим к частоте
+    await state.update_data(description=description)
+    await state.set_state(HabitStates.adding_frequency)
+    
+    await message.answer(
+        f"📝 Описание: <b>{description}</b>\n\n"
+        "Шаг 3/5: Выбери частоту выполнения\n\n"
+        "🔄 <b>Варианты:</b>\n"
+        "• <code>daily</code> - каждый день\n"
+        "• <code>weekly</code> - каждую неделю\n"
+        "• <code>custom</code> - свой график\n\n"
+        "❌ Для отмены: /cancel"
+    )
+
+@router.message(HabitStates.adding_frequency)
+async def add_habit_frequency(message: types.Message, state: FSMContext):
+    """Обработка частоты привычки"""
+    frequency = message.text.strip().lower()
+    
+    # Валидация
+    valid_frequencies = ['daily', 'weekly', 'custom']
+    if frequency not in valid_frequencies:
+        await message.answer(
+            "❌ Неверная частота. Выбери из:\n"
+            "• <code>daily</code> - каждый день\n"
+            "• <code>weekly</code> - каждую неделю\n"
+            "• <code>custom</code> - свой график"
+        )
+        return
+    
+    # Сохраняем частоту и переходим к цели
+    await state.update_data(frequency=frequency)
+    await state.set_state(HabitStates.adding_goal)
+    
+    # Динамический текст в зависимости от частоты
+    if frequency == 'daily':
+        await message.answer(
+            f"🔄 Частота: <b>каждый день</b>\n\n"
+            "Шаг 4/5: Сколько раз в день нужно выполнить эту привычку?\n\n"
+            "💡 <b>Примеры:</b>\n"
+            "• <code>1</code> — один раз (например, медитация)\n"
+            "• <code>3</code> — три раза (например, пить воду)\n"
+            "• <code>8</code> — восемь раз (например, стаканы воды)\n\n"
+            "❌ Для отмены: /cancel"
+        )
+    elif frequency == 'weekly':
+        await message.answer(
+            f"🔄 Частота: <b>каждую неделю</b>\n\n"
+            "Шаг 4/5: Сколько раз в неделю ты хочешь это делать?\n\n"
+            "💡 <b>Примеры:</b>\n"
+            "• <code>3</code> — три раза (пн-ср-пт)\n"
+            "• <code>5</code> — пять раз (только по будням)\n"
+            "• <code>7</code> — семь раз (каждый день)\n\n"
+            "❌ Для отмены: /cancel"
+        )
+    else:  # custom
+        await message.answer(
+            f"🔄 Частота: <b>по своему графику</b>\n\n"
+            "Шаг 4/5: Сколько раз за период ты планируешь выполнять?\n\n"
+            "💡 <b>Примеры:</b>\n"
+            "• <code>2</code> — два раза за период\n"
+            "• <code>5</code> — пять раз за период\n\n"
+            "❌ Для отмены: /cancel"
+        )
+
+@router.message(HabitStates.adding_goal)
+async def add_habit_goal(message: types.Message, state: FSMContext):
+    """Обработка цели привычки"""
+    try:
+        goal = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ Введи число (например: 1, 2, 3)")
+        return
+    
+    # Валидация
+    if goal < 1 or goal > 50:
+        await message.answer("❌ Цель должна быть от 1 до 50. Попробуй еще раз:")
+        return
+    
+    # Сохраняем цель и переходим к подтверждению
+    await state.update_data(goal=goal)
+    await state.set_state(HabitStates.confirming)
+    
+    # Получаем все данные для подтверждения
+    data = await state.get_data()
+    
+    freq_text = {
+        'daily': 'каждый день',
+        'weekly': 'каждую неделю',
+        'custom': 'по своему графику'
+    }
+    
+    await message.answer(
+        f"📋 <b>Проверь данные привычки:</b>\n\n"
+        f"🏷️ <b>Название:</b> {data['name']}\n"
+        f"📝 <b>Описание:</b> {data.get('description', 'нет')}\n"
+        f"🔄 <b>Частота:</b> {freq_text[data['frequency']]}\n"
+        f"🎯 <b>Цель:</b> {goal} раз в период\n\n"
+        f"✅ Все верно? Создаем привычку?",
+        reply_markup=get_habit_creation_confirmation()
+    )
+
+@router.callback_query(F.data == "confirm_habit")
+async def confirm_habit(callback: types.CallbackQuery, state: FSMContext):
+    """Подтверждение создания привычки"""
+    data = await state.get_data()
+    
+    async with get_async_session() as db:
+        user = await get_user_by_telegram_id(db, callback.from_user.id)
+        if not user:
+            await callback.answer("❌ Пользователь не найден")
+            return
+        
+        # Создаем привычку
+        habit = Habit(
+            user_id=user.id,
+            name=data['name'],
+            description=data.get('description'),
+            frequency=data['frequency'],
+            goal=data['goal'],
+            color='blue',  # по умолчанию
+            is_active=True
+        )
+        
+        db.add(habit)
+        await db.commit()
+        
+        await callback.answer("✅ Привычка создана!")
+        await callback.message.answer(
+            f"🎉 <b>Привычка создана!</b>\n\n"
+            f"🏷️ {data['name']}\n"
+            f"🎯 Цель: {data['goal']} раз в период\n\n"
+            f"💡 Не забывай отмечать выполнение каждый день!",
+            reply_markup=get_main_menu()
+        )
+    
+    await state.clear()
+
+@router.callback_query(F.data == "habit_delete")
+async def delete_habit_start(callback: types.CallbackQuery, state: FSMContext):
+    """Начало процесса удаления привычки"""
+    await callback.answer()
+    
+    async with get_async_session() as db:
+        user = await get_user_by_telegram_id(db, callback.from_user.id)
+        if not user:
+            await callback.message.answer("❌ Пользователь не найден")
+            return
+        
+        # Получаем активные привычки
+        query = select(
+            Habit.id, 
+            Habit.name, 
+            Habit.streak_current
+        ).where(
+            and_(Habit.user_id == user.id, Habit.is_active == True)
+        ).order_by(Habit.created_at)
+        
+        result = await db.execute(query)
+        habits = result.all()
+        
+        if not habits:
+            await callback.message.answer(
+                "📊 У тебя пока нет привычек для удаления",
+                reply_markup=get_main_menu()
+            )
+            return
+        
+        # Создаем клавиатуру с привычками для удаления
+        builder = InlineKeyboardBuilder()
+        for habit_id, habit_name, streak in habits:
+            builder.row(
+                InlineKeyboardButton(
+                    text=f"🗑️ {habit_name} ({streak} дней)",
+                    callback_data=f"delete_habit_{habit_id}"
+                )
+            )
+        
+        builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel"))
+        
+        await callback.message.answer(
+            "🗑️ <b>Удаление привычки</b>\n\n"
+            "Выбери привычку для удаления:",
+            reply_markup=builder.as_markup()
+        )
+
+@router.callback_query(F.data.startswith("delete_habit_"))
+async def delete_habit_confirm(callback: types.CallbackQuery, state: FSMContext):
+    """Подтверждение удаления привычки"""
+    habit_id = int(callback.data.split("_")[2])
+    await callback.answer()
+    
+    async with get_async_session() as db:
+        user = await get_user_by_telegram_id(db, callback.from_user.id)
+        if not user:
+            await callback.message.answer("❌ Пользователь не найден")
+            return
+        
+        # Получаем информацию о привычке
+        habit = await db.get(Habit, habit_id)
+        if not habit or habit.user_id != user.id:
+            await callback.message.answer("❌ Привычка не найдена")
+            return
+        
+        # Создаем клавиатуру подтверждения
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(
+                text="🗑️ Удалить",
+                callback_data=f"confirm_delete_{habit_id}"
+            ),
+            InlineKeyboardButton(
+                text="❌ Отмена",
+                callback_data="cancel"
+            )
+        )
+        
+        await callback.message.answer(
+            f"⚠️ <b>Точно удалить привычку?</b>\n\n"
+            f"🏷️ <b>{habit.name}</b>\n"
+            f"� <b>Стрик: {habit.streak_current} дней</b>\n\n"
+            f"❗️ <i>Это действие нельзя отменить!</i>",
+            reply_markup=builder.as_markup()
+        )
+
+@router.callback_query(F.data.startswith("confirm_delete_"))
+async def delete_habit_execute(callback: types.CallbackQuery, state: FSMContext):
+    """Выполнение удаления привычки"""
+    habit_id = int(callback.data.split("_")[2])
+    await callback.answer()
+    
+    async with get_async_session() as db:
+        user = await get_user_by_telegram_id(db, callback.from_user.id)
+        if not user:
+            await callback.message.answer("❌ Пользователь не найден")
+            return
+        
+        # Получаем привычку
+        habit = await db.get(Habit, habit_id)
+        if not habit or habit.user_id != user.id:
+            await callback.message.answer("❌ Привычка не найдена")
+            return
+        
+        habit_name = habit.name
+        
+        # Мягкое удаление (деактивация)
+        habit.is_active = False
+        await db.commit()
+        
+        await callback.message.answer(
+            f"🗑️ <b>Привычка удалена</b>\n\n"
+            f"🏷️ {habit_name}\n\n"
+            f"💡 Все данные сохранены, привычка просто деактивирована",
+            reply_markup=get_main_menu()
+        )
+
+@router.callback_query(F.data == "cancel_habit")
+async def cancel_habit(callback: types.CallbackQuery, state: FSMContext):
+    """Отмена создания привычки"""
+    await state.clear()
+    await callback.answer("❌ Создание отменено")
+    await callback.message.answer(
+        "🚫 Создание привычки отменено\n\n"
+        "Возвращаю в главное меню...",
+        reply_markup=get_main_menu()
+    )
+
+@router.callback_query(F.data == "cancel")
+async def cancel_action(callback: types.CallbackQuery, state: FSMContext):
+    """Универсальная отмена действия"""
+    current_state = await state.get_state()
+    
+    if current_state:
+        await state.clear()
+        await callback.answer("❌ Действие отменено")
+        await callback.message.answer(
+            "🚫 Действие отменено\n\n"
+            "Возвращаю в главное меню...",
+            reply_markup=get_main_menu()
+        )
+    else:
+        await callback.answer()
+        await callback.message.answer(
+            "🚫 Отмена\n\n"
+            "Возвращаю в главное меню...",
+            reply_markup=get_main_menu()
+        )
+@router.message(F.text == "/cancel")
+async def cancel_cmd(message: types.Message, state: FSMContext):
+    """Отмена текущего действия"""
+    current_state = await state.get_state()
+    
+    if current_state is None:
+        await message.answer("ℹ️ Нет активных действий")
+        return
+    
+    await state.clear()
+    await message.answer(
+        "🚫 Действие отменено\n\n"
+        "Возвращаю в главное меню...",
+        reply_markup=get_main_menu()
+    )
+
+@router.message(F.text == "/skip")
+async def skip_cmd(message: types.Message, state: FSMContext):
+    """Пропуск текущего шага"""
+    current_state = await state.get_state()
+    
+    if current_state == HabitStates.adding_description.state:
+        await state.update_data(description="")
+        await state.set_state(HabitStates.adding_frequency)
+        await message.answer(
+            "⏭️ Описание пропущено\n\n"
+            "Шаг 3/5: Выбери частоту выполнения\n\n"
+            "🔄 <b>Варианты:</b>\n"
+            "• <code>daily</code> - каждый день\n"
+            "• <code>weekly</code> - каждую неделю\n"
+            "• <code>custom</code> - свой график\n\n"
+            "❌ Для отмены: /cancel"
+        )
+    else:
+        await message.answer("ℹ️ Пропуск недоступен на этом шаге")
 
 @router.message(F.text == "📰 Новости")
 async def news_cmd(message: types.Message):

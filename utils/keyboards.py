@@ -46,6 +46,24 @@ def get_habits_menu(habits: List[tuple]) -> InlineKeyboardMarkup:
     
     return builder.as_markup()
 
+def get_habit_creation_confirmation() -> InlineKeyboardMarkup:
+    """Подтверждение создания привычки"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="✅ Создать", callback_data="confirm_habit"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_habit")
+    )
+    return builder.as_markup()
+
+def get_cancel_keyboard() -> ReplyKeyboardMarkup:
+    """Клавиатура для отмены действия"""
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="/cancel")]],
+        resize_keyboard=True,
+        input_field_placeholder="Введи данные или /cancel для отмены"
+    )
+    return keyboard
+
 def get_habit_confirmation(habit_id: int, habit_name: str) -> InlineKeyboardMarkup:
     """Подтверждение выполнения привычки"""
     builder = InlineKeyboardBuilder()
@@ -180,8 +198,8 @@ def get_confirmation_keyboard(action: str, item_id: Optional[int] = None) -> Inl
     return builder.as_markup()
 
 # Клавиатура отмены действия
-def get_cancel_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура для отмены действия"""
+def get_cancel_inline_keyboard() -> InlineKeyboardMarkup:
+    """Inline клавиатура для отмены действия"""
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel"))
     return builder.as_markup()
