@@ -23,7 +23,7 @@ from core.database import get_async_session, init_db
 from models.user import User
 from models.habit import Habit
 from models.habit_log_new import HabitLog
-from utils.keyboards import get_main_menu, get_habits_menu, get_habit_confirmation, get_habit_creation_confirmation, get_cancel_keyboard
+from utils.keyboards import get_main_menu, get_habits_menu, get_habit_confirmation, get_habit_creation_confirmation, get_cancel_keyboard, get_frequency_keyboard
 from version import get_version, get_full_version
 
 # Создаем роутер
@@ -216,31 +216,40 @@ async def add_habit_description(message: types.Message, state: FSMContext):
     
     await message.answer(
         f"📝 Описание: <b>{description}</b>\n\n"
-        "Шаг 3/5: Выбери частоту выполнения\n\n"
-        "🔄 <b>Варианты:</b>\n"
-        "• <code>daily</code> - каждый день\n"
-        "• <code>weekly</code> - каждую неделю\n"
-        "• <code>custom</code> - свой график\n\n"
-        "❌ Для отмены: /cancel"
+        "Шаг 3/6: Выбери частоту выполнения\n\n"
+        "❌ Для отмены: /cancel",
+        reply_markup=get_frequency_keyboard()
     )
 
 @router.message(HabitStates.adding_frequency)
 async def add_habit_frequency(message: types.Message, state: FSMContext):
     """Обработка частоты привычки"""
-    frequency = message.text.strip().lower()
+    frequency_text = message.text.strip()
     
-    # Валидация
-    valid_frequencies = ['daily', 'weekly', 'custom']
-    if frequency not in valid_frequencies:
-        await message.answer(
-            "❌ Неверная частота. Выбери из:\n"
-            "• <code>daily</code> - каждый день\n"
-            "• <code>weekly</code> - каждую неделю\n"
-            "• <code>custom</code> - свой график"
-        )
-        return
+    # Определяем частоту по тексту кнопки
+    if frequency_text == "📅 Каждый день":
+        frequency = "daily"
+    elif frequency_text == "📆 Каждую неделю":
+        frequency = "weekly"
+    elif frequency_text == "🗓️ Свой график":
+        frequency = "custom"
+    else:
+        # Для обратной совместимости - если ввели текстом
+        frequency = frequency_text.lower()
+        valid_frequencies = ['daily', 'weekly', 'custom']
+        if frequency not in valid_frequencies:
+            await message.answer(
+                "❌ <b>Некорректная частота!</b>\n\n"
+                "Пожалуйста, выбери один из вариантов на клавиатуре:\n"
+                "• 📅 Каждый день\n"
+                "• 📆 Каждую неделю\n"
+                "• 🗓️ Свой график\n\n"
+                "❌ Для отмены: /cancel",
+                reply_markup=get_frequency_keyboard()
+            )
+            return
     
-    # Сохраняем частоту и переходим к цели
+    # Сохраняем частоту
     await state.update_data(frequency=frequency)
     await state.set_state(HabitStates.adding_goal)
     
@@ -248,31 +257,34 @@ async def add_habit_frequency(message: types.Message, state: FSMContext):
     if frequency == 'daily':
         await message.answer(
             f"🔄 Частота: <b>каждый день</b>\n\n"
-            "Шаг 4/5: Сколько раз в день нужно выполнить эту привычку?\n\n"
+            "Шаг 4/6: Сколько раз в день нужно выполнить эту привычку?\n\n"
             "💡 <b>Примеры:</b>\n"
             "• <code>1</code> — один раз (например, медитация)\n"
             "• <code>3</code> — три раза (например, пить воду)\n"
             "• <code>8</code> — восемь раз (например, стаканы воды)\n\n"
-            "❌ Для отмены: /cancel"
+            "❌ Для отмены: /cancel",
+            reply_markup=get_cancel_keyboard()
         )
     elif frequency == 'weekly':
         await message.answer(
             f"🔄 Частота: <b>каждую неделю</b>\n\n"
-            "Шаг 4/5: Сколько раз в неделю ты хочешь это делать?\n\n"
+            "Шаг 4/6: Сколько раз в неделю ты хочешь это делать?\n\n"
             "💡 <b>Примеры:</b>\n"
             "• <code>3</code> — три раза (пн-ср-пт)\n"
             "• <code>5</code> — пять раз (только по будням)\n"
             "• <code>7</code> — семь раз (каждый день)\n\n"
-            "❌ Для отмены: /cancel"
+            "❌ Для отмены: /cancel",
+            reply_markup=get_cancel_keyboard()
         )
     else:  # custom
         await message.answer(
             f"🔄 Частота: <b>по своему графику</b>\n\n"
-            "Шаг 4/5: Сколько раз за период ты планируешь выполнять?\n\n"
+            "Шаг 4/6: Сколько раз за период ты планируешь выполнять?\n\n"
             "💡 <b>Примеры:</b>\n"
             "• <code>2</code> — два раза за период\n"
             "• <code>5</code> — пять раз за период\n\n"
-            "❌ Для отмены: /cancel"
+            "❌ Для отмены: /cancel",
+            reply_markup=get_cancel_keyboard()
         )
 
 @router.message(HabitStates.adding_goal)

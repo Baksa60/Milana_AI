@@ -55,6 +55,20 @@ def get_habit_creation_confirmation() -> InlineKeyboardMarkup:
     )
     return builder.as_markup()
 
+def get_frequency_keyboard() -> ReplyKeyboardMarkup:
+    """Клавиатура для выбора частоты привычки"""
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📅 Каждый день")],
+            [KeyboardButton(text="📆 Каждую неделю")],
+            [KeyboardButton(text="🗓️ Свой график")],
+            [KeyboardButton(text="/cancel")]
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Выбери частоту выполнения"
+    )
+    return keyboard
+
 def get_cancel_keyboard() -> ReplyKeyboardMarkup:
     """Клавиатура для отмены действия"""
     keyboard = ReplyKeyboardMarkup(
