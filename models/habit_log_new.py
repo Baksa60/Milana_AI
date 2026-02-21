@@ -3,10 +3,7 @@
 """
 from datetime import datetime, date
 from sqlalchemy import Column, Integer, Date, DateTime, ForeignKey, UniqueConstraint
-from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
+from models import Base
 
 class HabitLog(Base):
     """Модель логов выполнений привычек"""
@@ -15,11 +12,12 @@ class HabitLog(Base):
     # Основные поля
     id = Column(Integer, primary_key=True, autoincrement=True)
     habit_id = Column(Integer, ForeignKey("habits.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     date = Column(Date, nullable=False, comment="Дата выполнения")
     completed_at = Column(DateTime, default=datetime.utcnow, comment="Точное время выполнения")
     
-    # Связи
-    habit = relationship("Habit", back_populates="logs")
+    # Убираем relationship чтобы избежать циклического импорта
+    # habit = relationship("Habit", back_populates="logs")
     
     # Уникальный индекс - защита от дублей
     __table_args__ = (
@@ -34,6 +32,7 @@ class HabitLog(Base):
         return {
             "id": self.id,
             "habit_id": self.habit_id,
+            "user_id": self.user_id,
             "date": self.date.isoformat(),
             "completed_at": self.completed_at.isoformat()
         }

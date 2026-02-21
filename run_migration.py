@@ -67,16 +67,19 @@ async def run_all_migrations():
     # Создаем таблицу миграций
     await check_migration_table()
     
-    # Список миграций
-    migrations = [
-        "migrations/001_create_habits_tables.sql",
-        "migrations/002_update_habits_structure.sql",
-        "migrations/003_update_users_table.sql"
+    # Список миграций в порядке выполнения
+    MIGRATIONS = [
+        "001_create_habits_tables.sql",
+        "002_update_habits_structure.sql", 
+        "003_update_users_table.sql",
+        "004_add_user_id_to_habit_logs.sql",
+        "005_add_target_days_to_habits.sql",
+        "006_add_last_completed_date_to_habits.sql"
     ]
     
     applied_count = 0
     
-    for migration_file in migrations:
+    for migration_file in MIGRATIONS:
         filename = os.path.basename(migration_file)
         
         if await is_migration_applied(filename):
@@ -84,7 +87,8 @@ async def run_all_migrations():
             continue
         
         # Выполняем миграцию
-        await run_migration(migration_file)
+        migration_path = os.path.join("migrations", migration_file)
+        await run_migration(migration_path)
         
         # Отмечаем как примененную
         await mark_migration_applied(filename)

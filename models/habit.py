@@ -4,7 +4,7 @@
 from datetime import date, time
 from sqlalchemy import Column, Integer, String, Boolean, Text, Date, Time, ForeignKey, CheckConstraint
 from sqlalchemy.orm import relationship
-from core.database import Base
+from models import Base
 
 class Habit(Base):
     """Модель привычек"""
@@ -24,11 +24,8 @@ class Habit(Base):
         default="daily",
         comment="Частота: daily, weekly, custom"
     )
-    goal = Column(
-        Integer, 
-        default=1,
-        comment="Цель: сколько раз в период"
-    )
+    goal = Column(Integer, comment="Целевое количество выполнений за период")
+    target_days = Column(Integer, comment="Целевое количество дней для привычки")
     
     # Геймификация
     streak_current = Column(Integer, default=0, comment="Текущий стрик")
@@ -45,8 +42,8 @@ class Habit(Base):
     created_at = Column(Date, comment="Дата создания")
     updated_at = Column(Date, comment="Дата обновления")
     
-    # Связи
-    user = relationship("User", back_populates="habits")
+    # Убираем relationship чтобы избежать циклического импорта
+    # user = relationship("User", back_populates="habits")
     # logs = relationship("HabitLog", back_populates="habit", cascade="all, delete-orphan")  # Убираем, чтобы избежать цикла
     
     # Ограничения на уровне БД

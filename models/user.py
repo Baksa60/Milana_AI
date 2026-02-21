@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, Time
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from core.database import Base
+from models import Base
 
 class User(Base):
     __tablename__ = "users"
@@ -29,9 +29,9 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
-    # Связи с другими моделями
-    habits = relationship("Habit", back_populates="user", cascade="all, delete-orphan")
-    subscriptions = relationship("Subscription", back_populates="user", cascade="all, delete-orphan")
+    # Убираем relationship чтобы избежать циклического импорта
+    # habits = relationship("Habit", back_populates="user", cascade="all, delete-orphan")
+    # subscriptions = relationship("Subscription", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<User(telegram_id={self.telegram_id}, username={self.username})>"
