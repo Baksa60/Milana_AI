@@ -3,6 +3,7 @@
 """
 import asyncio
 import os
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -23,8 +24,21 @@ from core.database import get_async_session, init_db
 from models.user import User
 from models.habit import Habit
 from models.habit_log_new import HabitLog
-from utils.keyboards import get_main_menu, get_habits_menu, get_habit_confirmation, get_habit_creation_confirmation, get_cancel_keyboard, get_frequency_keyboard
+from utils.keyboards import (
+    get_main_menu, 
+    get_habits_menu, 
+    get_habit_creation_confirmation,
+    get_frequency_keyboard,
+    get_skip_cancel_keyboard,
+    get_cancel_keyboard,
+    get_habit_confirmation,
+    get_cancel_inline_keyboard
+)
 from version import get_version, get_full_version
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Создаем роутер
 router = Router()
@@ -46,6 +60,30 @@ async def get_user_by_telegram_id(db: AsyncSession, telegram_id: int):
     return result.scalar_one_or_none()
 
 # Основные команды
+# Универсальный обработчик команды /cancel
+@router.message(F.text == "❌ Отмена")
+async def cancel_command(message: types.Message, state: FSMContext):
+    """Обработка команды /cancel"""
+    try:
+        current_state = await state.get_state()
+        
+        if current_state:
+            await state.clear()
+            await message.answer(
+                "🚫 <b>Создание привычки отменено</b>\n\n"
+                "Возвращаю в главное меню...",
+                reply_markup=get_main_menu()
+            )
+        else:
+            await message.answer(
+                "🚫 <b>Отмена</b>\n\n"
+                "Возвращаю в главное меню...",
+                reply_markup=get_main_menu()
+            )
+    except Exception as e:
+        logger.error(f"Error in cancel_command: {e}")
+        # Не отвечаем на ошибку, чтобы избежать падения бота
+
 @router.message(F.text == "/start")
 async def start_cmd(message: types.Message, state: FSMContext):
     async with get_async_session() as db:
@@ -104,47 +142,79 @@ async def version_cmd(message: types.Message):
 # Кнопки главного меню
 @router.message(F.text == "📊 Трекер привычек")
 async def habits_cmd(message: types.Message):
-    async with get_async_session() as db:
-        user = await get_user_by_telegram_id(db, message.from_user.id)
-        if not user:
-            await message.answer("❌ Сначала начните с команды /start")
-            return
+    try:
+        logger.info(f"User {message.from_user.id} requested habits list")
         
-        query = select(
-            Habit.id, 
-            Habit.name, 
-            Habit.streak_current,
-            Habit.last_completed_date
-        ).where(
-            and_(Habit.user_id == user.id, Habit.is_active == True)
-        ).order_by(Habit.created_at)
-        
-        result = await db.execute(query)
-        habits = result.all()
-        
-        if not habits:
-            await message.answer(
-                "📊 У тебя пока нет привычек\n\n"
-                "Добавь первую привычку, чтобы начать отслеживать прогресс!",
-                reply_markup=get_habits_menu([])
-            )
-        else:
-            text = f"📊 Твои привычки ({len(habits)}):\n\n"
-            habits_list = []
-            for habit_id, habit_name, streak_current, last_completed_date in habits:
-                habits_list.append((habit_id, habit_name, streak_current))
-                
-                # Проверяем выполнена ли привычка сегодня
-                from datetime import date
-                is_completed_today = last_completed_date == date.today()
-                
-                # Используем метод из модели для эмодзи стрика
-                streak_emoji = "🔥" if streak_current >= 7 else "💪" if streak_current >= 3 else "👍"
-                completed_mark = "✅" if is_completed_today else "⭕"
-                text += f"{completed_mark} {streak_emoji} {habit_name} - {streak_current} дней подряд\n"
+        async with get_async_session() as db:
+            user = await get_user_by_telegram_id(db, message.from_user.id)
+            if not user:
+                logger.warning(f"User {message.from_user.id} not found in database")
+                await message.answer("❌ Сначала начните с команды /start")
+                return
             
-            text += f"\n💡 Продолжай в том же духе!"
-            await message.answer(text, reply_markup=get_habits_menu(habits_list))
+            logger.info(f"Found user {user.id}, querying habits")
+            
+            query = select(Habit).where(
+                and_(Habit.user_id == user.id, Habit.is_active == True)
+            ).order_by(Habit.created_at)
+            
+            result = await db.execute(query)
+            habits = result.scalars().all()
+            
+            logger.info(f"Found {len(habits)} habits for user {user.id}")
+            
+            if not habits:
+                await message.answer(
+                    "📊 У тебя пока нет привычек\n\n"
+                    "Добавь первую привычку, чтобы начать отслеживать прогресс!",
+                    reply_markup=get_habits_menu()
+                )
+                return
+            
+            # Формируем сообщение со списком привычек
+            habits_text = "📊 <b>Твои привычки:</b>\n\n"
+            keyboard_buttons = []
+            
+            for habit in habits:
+                logger.info(f"Processing habit: {habit.name}, id: {habit.id}")
+                
+                # Определяем статус выполнения
+                today = date.today()
+                if habit.last_completed_date == today:
+                    status_emoji = "✅"
+                    status_text = "выполнена сегодня"
+                elif habit.last_completed_date == today - timedelta(days=1):
+                    status_emoji = "🔄"
+                    status_text = "вчера выполнена"
+                else:
+                    status_emoji = "⭕"
+                    status_text = f"пропуск {habit.streak_current} дней"
+                
+                habits_text += f"{status_emoji} <b>{habit.name}</b> ({status_text})\n"
+                keyboard_buttons.append([InlineKeyboardButton(
+                    text=f"{status_emoji} {habit.name} ({habit.streak_current} дней)",
+                    callback_data=f"habit_complete_{habit.id}"
+                )])
+            
+            habits_text += "\n💡 Нажми на привычку, чтобы отметить выполнение"
+            
+            # Создаем клавиатуру
+            builder = InlineKeyboardBuilder()
+            for button_row in keyboard_buttons:
+                builder.row(*button_row)
+            
+            # Добавляем кнопку добавления привычки
+            builder.row(InlineKeyboardButton(text="➕ Добавить привычку", callback_data="habit_add"))
+            
+            await message.answer(habits_text, reply_markup=builder.as_markup())
+            logger.info(f"Successfully sent habits list to user {message.from_user.id}")
+            
+    except Exception as e:
+        logger.error(f"Error in habits_cmd for user {message.from_user.id}: {e}", exc_info=True)
+        await message.answer(
+            "❌ Произошла ошибка при загрузке привычек. Попробуй еще раз.",
+            reply_markup=get_main_menu()
+        )
 
 # Обработчики для добавления привычки
 @router.message(F.text == "➕ Добавить привычку")
@@ -159,24 +229,23 @@ async def add_habit_start(message_or_callback, state: FSMContext):
         await message_or_callback.answer()
         await message_or_callback.message.answer(
             "📝 <b>Создание новой привычки</b>\n\n"
-            "Шаг 1/5: Введи название привычки\n\n"
-            "<i>Пример: 'Утренняя пробежка', 'Читать 30 минут', 'Медитация'</i>\n\n"
-            "❌ Для отмены: /cancel",
+            "Шаг 1/6: Введи название привычки\n\n"
+            "<i>Пример: 'Утренняя пробежка', 'Читать 30 минут', 'Медитация'</i>",
             reply_markup=get_cancel_keyboard()
         )
     else:
         # Это message
         await message_or_callback.answer(
             "📝 <b>Создание новой привычки</b>\n\n"
-            "Шаг 1/5: Введи название привычки\n\n"
-            "<i>Пример: 'Утренняя пробежка', 'Читать 30 минут', 'Медитация'</i>\n\n"
-            "❌ Для отмены: /cancel",
+            "Шаг 1/6: Введи название привычки\n\n"
+            "<i>Пример: 'Утренняя пробежка', 'Читать 30 минут', 'Медитация'</i>",
             reply_markup=get_cancel_keyboard()
         )
 
 @router.message(HabitStates.adding_name)
 async def add_habit_name(message: types.Message, state: FSMContext):
     """Обработка названия привычки"""
+    logger.info(f"Received habit name: '{message.text}' in state {await state.get_state()}")
     name = message.text.strip()
     
     # Валидация
@@ -192,12 +261,13 @@ async def add_habit_name(message: types.Message, state: FSMContext):
     await state.update_data(name=name)
     await state.set_state(HabitStates.adding_description)
     
+    logger.info(f"Saved name '{name}', transitioning to description state")
+    
     await message.answer(
         f"✅ Название: <b>{name}</b>\n\n"
-        "Шаг 2/5: Введи описание (необязательно)\n\n"
-        "<i>Зачем тебе эта привычка? Какую цель преследуешь?</i>\n\n"
-        "❌ Для отмены: /cancel\n"
-        "⏭️ Пропустить: /skip"
+        "Шаг 2/6: Введи описание (необязательно)\n\n"
+        "<i>Зачем тебе эта привычка? Какую цель преследуешь?</i>",
+        reply_markup=get_skip_cancel_keyboard()
     )
 
 @router.message(HabitStates.adding_description)
@@ -216,8 +286,7 @@ async def add_habit_description(message: types.Message, state: FSMContext):
     
     await message.answer(
         f"📝 Описание: <b>{description}</b>\n\n"
-        "Шаг 3/6: Выбери частоту выполнения\n\n"
-        "❌ Для отмены: /cancel",
+        "Шаг 3/6: Выбери частоту выполнения",
         reply_markup=get_frequency_keyboard()
     )
 
@@ -229,22 +298,31 @@ async def add_habit_frequency(message: types.Message, state: FSMContext):
     # Определяем частоту по тексту кнопки
     if frequency_text == "📅 Каждый день":
         frequency = "daily"
-    elif frequency_text == "📆 Каждую неделю":
+    elif frequency_text == "💼 По будням":
+        frequency = "weekdays"
+    elif frequency_text == "🎉 По выходным":
+        frequency = "weekends"
+    elif frequency_text == "🗓️ Раз в неделю":
         frequency = "weekly"
-    elif frequency_text == "🗓️ Свой график":
+    elif frequency_text == "⚙️ Свой график":
         frequency = "custom"
+    elif frequency_text == "❌ Отмена":
+        # Обрабатываем кнопку Отмена
+        await state.clear()
+        await message.answer(
+            "🚫 <b>Создание привычки отменено</b>\n\n"
+            "Возвращаю в главное меню...",
+            reply_markup=get_main_menu()
+        )
+        return
     else:
         # Для обратной совместимости - если ввели текстом
         frequency = frequency_text.lower()
-        valid_frequencies = ['daily', 'weekly', 'custom']
+        valid_frequencies = ['daily', 'weekly', 'weekdays', 'weekends', 'custom']
         if frequency not in valid_frequencies:
             await message.answer(
                 "❌ <b>Некорректная частота!</b>\n\n"
-                "Пожалуйста, выбери один из вариантов на клавиатуре:\n"
-                "• 📅 Каждый день\n"
-                "• 📆 Каждую неделю\n"
-                "• 🗓️ Свой график\n\n"
-                "❌ Для отмены: /cancel",
+                "Пожалуйста, выбери один из вариантов на клавиатуре",
                 reply_markup=get_frequency_keyboard()
             )
             return
@@ -261,29 +339,46 @@ async def add_habit_frequency(message: types.Message, state: FSMContext):
             "💡 <b>Примеры:</b>\n"
             "• <code>1</code> — один раз (например, медитация)\n"
             "• <code>3</code> — три раза (например, пить воду)\n"
-            "• <code>8</code> — восемь раз (например, стаканы воды)\n\n"
-            "❌ Для отмены: /cancel",
+            "• <code>8</code> — восемь раз (например, стаканы воды)",
+            reply_markup=get_cancel_keyboard()
+        )
+    elif frequency == 'weekdays':
+        await message.answer(
+            f"🔄 Частота: <b>по будням</b>\n\n"
+            "Шаг 4/6: Сколько раз в будний день нужно выполнить эту привычку?\n\n"
+            "💡 <b>Примеры:</b>\n"
+            "• <code>1</code> — один раз (например, утренняя зарядка)\n"
+            "• <code>2</code> — два раза (например, обед и ужин)",
+            reply_markup=get_cancel_keyboard()
+        )
+    elif frequency == 'weekends':
+        await message.answer(
+            f"🔄 Частота: <b>по выходным</b>\n\n"
+            "Шаг 4/6: Сколько раз в выходной день нужно выполнить эту привычку?\n\n"
+            "💡 <b>Примеры:</b>\n"
+            "• <code>1</code> — один раз (например, долгая прогулка)\n"
+            "• <code>3</code> — три раза (например, приемы пищи)",
             reply_markup=get_cancel_keyboard()
         )
     elif frequency == 'weekly':
         await message.answer(
-            f"🔄 Частота: <b>каждую неделю</b>\n\n"
+            f"🔄 Частота: <b>раз в неделю</b>\n\n"
             "Шаг 4/6: Сколько раз в неделю ты хочешь это делать?\n\n"
             "💡 <b>Примеры:</b>\n"
-            "• <code>3</code> — три раза (пн-ср-пт)\n"
-            "• <code>5</code> — пять раз (только по будням)\n"
-            "• <code>7</code> — семь раз (каждый день)\n\n"
-            "❌ Для отмены: /cancel",
+            "• <code>1</code> — один раз (например, спортзал)\n"
+            "• <code>3</code> — три раза (например, тренировки)\n"
+            "• <code>5</code> — пять раз (например, йога)",
             reply_markup=get_cancel_keyboard()
         )
     else:  # custom
         await message.answer(
-            f"🔄 Частота: <b>по своему графику</b>\n\n"
-            "Шаг 4/6: Сколько раз за период ты планируешь выполнять?\n\n"
-            "💡 <b>Примеры:</b>\n"
-            "• <code>2</code> — два раза за период\n"
-            "• <code>5</code> — пять раз за период\n\n"
-            "❌ Для отмены: /cancel",
+            f"🔄 Частота: <b>свой график</b>\n\n"
+            "⚙️ <b>Настрой свой график:</b>\n\n"
+            "🔧 Каждые N дней — повторять через указанное количество дней\n"
+            "📅 Выбрать дни — выбрать конкретные дни недели\n\n"
+            "💡 <b>Пока выбери:</b>\n"
+            "• <code>каждые</code> — для настройки интервала\n"
+            "• <code>дни</code> — для выбора дней недели",
             reply_markup=get_cancel_keyboard()
         )
 
@@ -302,8 +397,7 @@ async def add_habit_goal(message: types.Message, state: FSMContext):
                 "💡 <b>Примеры:</b>\n"
                 "• <code>1</code> — один раз\n"
                 "• <code>3</code> — три раза\n"
-                "• <code>8</code> — восемь раз\n\n"
-                "❌ Для отмены: /cancel",
+                "• <code>8</code> — восемь раз",
                 reply_markup=get_cancel_keyboard()
             )
             return
@@ -314,8 +408,7 @@ async def add_habit_goal(message: types.Message, state: FSMContext):
             "💡 <b>Примеры:</b>\n"
             "• <code>1</code> — один раз\n"
             "• <code>3</code> — три раза\n"
-            "• <code>8</code> — восемь раз\n\n"
-            "❌ Для отмены: /cancel",
+            "• <code>8</code> — восемь раз",
             reply_markup=get_cancel_keyboard()
         )
         return
@@ -330,8 +423,7 @@ async def add_habit_goal(message: types.Message, state: FSMContext):
         "💡 <b>Примеры:</b>\n"
         "• <code>30</code> — на месяц\n"
         "• <code>90</code> — на квартал\n"
-        "• <code>365</code> — на год\n\n"
-        "❌ Для отмены: /cancel",
+        "• <code>365</code> — на год",
         reply_markup=get_cancel_keyboard()
     )
 
@@ -350,8 +442,7 @@ async def add_habit_target_days(message: types.Message, state: FSMContext):
                 "💡 <b>Примеры:</b>\n"
                 "• <code>30</code> — на месяц\n"
                 "• <code>90</code> — на квартал\n"
-                "• <code>365</code> — на год\n\n"
-                "❌ Для отмены: /cancel",
+                "• <code>365</code> — на год",
                 reply_markup=get_cancel_keyboard()
             )
             return
@@ -362,8 +453,7 @@ async def add_habit_target_days(message: types.Message, state: FSMContext):
             "💡 <b>Примеры:</b>\n"
             "• <code>30</code> — на месяц\n"
             "• <code>90</code> — на квартал\n"
-            "• <code>365</code> — на год\n\n"
-            "❌ Для отмены: /cancel",
+            "• <code>365</code> — на год",
             reply_markup=get_cancel_keyboard()
         )
         return
@@ -646,23 +736,8 @@ async def cancel_action(callback: types.CallbackQuery, state: FSMContext):
             "Возвращаю в главное меню...",
             reply_markup=get_main_menu()
         )
-@router.message(F.text == "/cancel")
-async def cancel_cmd(message: types.Message, state: FSMContext):
-    """Отмена текущего действия"""
-    current_state = await state.get_state()
-    
-    if current_state is None:
-        await message.answer("ℹ️ Нет активных действий")
-        return
-    
-    await state.clear()
-    await message.answer(
-        "🚫 Действие отменено\n\n"
-        "Возвращаю в главное меню...",
-        reply_markup=get_main_menu()
-    )
 
-@router.message(F.text == "/skip")
+@router.message(F.text == "⏭️ Пропустить")
 async def skip_cmd(message: types.Message, state: FSMContext):
     """Пропуск текущего шага"""
     current_state = await state.get_state()
@@ -672,12 +747,8 @@ async def skip_cmd(message: types.Message, state: FSMContext):
         await state.set_state(HabitStates.adding_frequency)
         await message.answer(
             "⏭️ Описание пропущено\n\n"
-            "Шаг 3/5: Выбери частоту выполнения\n\n"
-            "🔄 <b>Варианты:</b>\n"
-            "• <code>daily</code> - каждый день\n"
-            "• <code>weekly</code> - каждую неделю\n"
-            "• <code>custom</code> - свой график\n\n"
-            "❌ Для отмены: /cancel"
+            "Шаг 3/6: Выбери частоту выполнения",
+            reply_markup=get_frequency_keyboard()
         )
     else:
         await message.answer("ℹ️ Пропуск недоступен на этом шаге")
@@ -749,15 +820,6 @@ async def stats_cmd(message: types.Message):
         )
         
         await message.answer(stats_text, reply_markup=get_main_menu())
-
-@router.message()
-async def echo(message: types.Message):
-    print(f"🔍 DEBUG: Получено сообщение: '{message.text}'")
-    await message.answer(
-        "😕 Я не понял эту команду\n\n"
-        "Используй кнопки меню или введи /help для справки",
-        reply_markup=get_main_menu()
-    )
 
 async def main():
     print(f"🤖 Milana AI v{get_version()} запускается...")

@@ -74,7 +74,8 @@ async def run_all_migrations():
         "003_update_users_table.sql",
         "004_add_user_id_to_habit_logs.sql",
         "005_add_target_days_to_habits.sql",
-        "006_add_last_completed_date_to_habits.sql"
+        "006_add_last_completed_date_to_habits.sql",
+        "007_update_frequency_constraints.sql"
     ]
     
     applied_count = 0

@@ -59,22 +59,44 @@ def get_frequency_keyboard() -> ReplyKeyboardMarkup:
     """Клавиатура для выбора частоты привычки"""
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📅 Каждый день")],
-            [KeyboardButton(text="📆 Каждую неделю")],
-            [KeyboardButton(text="🗓️ Свой график")],
-            [KeyboardButton(text="/cancel")]
+            [
+                KeyboardButton(text="📅 Каждый день"),
+                KeyboardButton(text="🗓️ Раз в неделю")
+            ],
+            [
+                KeyboardButton(text="💼 По будням"),
+                KeyboardButton(text="🎉 По выходным")
+            ],
+            [
+                KeyboardButton(text="⚙️ Свой график"),
+                KeyboardButton(text="❌ Отмена")
+            ]
         ],
         resize_keyboard=True,
         input_field_placeholder="Выбери частоту выполнения"
     )
     return keyboard
 
+def get_skip_cancel_keyboard() -> ReplyKeyboardMarkup:
+    """Клавиатура для пропуска или отмены"""
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="⏭️ Пропустить"),
+                KeyboardButton(text="❌ Отмена")
+            ]
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Введи описание или выбери действие"
+    )
+    return keyboard
+
 def get_cancel_keyboard() -> ReplyKeyboardMarkup:
     """Клавиатура для отмены действия"""
     keyboard = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="/cancel")]],
+        keyboard=[[KeyboardButton(text="❌ Отмена")]],
         resize_keyboard=True,
-        input_field_placeholder="Введи данные или /cancel для отмены"
+        input_field_placeholder="Введи данные или ❌ Отмена"
     )
     return keyboard
 

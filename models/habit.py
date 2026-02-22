@@ -22,7 +22,7 @@ class Habit(Base):
     frequency = Column(
         String(20), 
         default="daily",
-        comment="Частота: daily, weekly, custom"
+        comment="Частота: daily, weekly, weekdays, weekends, custom"
     )
     goal = Column(Integer, comment="Целевое количество выполнений за период")
     target_days = Column(Integer, comment="Целевое количество дней для привычки")
@@ -49,7 +49,7 @@ class Habit(Base):
     # Ограничения на уровне БД
     __table_args__ = (
         CheckConstraint(
-            "frequency IN ('daily', 'weekly', 'custom')",
+            "frequency IN ('daily', 'weekly', 'weekdays', 'weekends', 'custom')",
             name="check_frequency"
         ),
         CheckConstraint(
@@ -58,7 +58,15 @@ class Habit(Base):
         ),
         CheckConstraint(
             "length(name) > 0",
+            name="check_name_not_empty"
+        ),
+        CheckConstraint(
+            "length(name) <= 50",
             name="check_name_length"
+        ),
+        CheckConstraint(
+            "target_days > 0 AND target_days <= 3650",
+            name="check_target_days"
         ),
         CheckConstraint(
             "color IN ('blue', 'green', 'red', 'yellow', 'purple', 'orange')",
